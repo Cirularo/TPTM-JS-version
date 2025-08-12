@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Testing Ground for JavaScript code</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.15/paper-full.min.js"></script>
+  </head>
+  <body>
+    <canvas id ="Canvas_1" resize></canvas>
+    <script>
+      function pinner(lon1, lat1, r1, lon2, lat2, r2) {
+        if (r1 < 0 || r2 < 0 || r1 == r2) {
+          throw new Error("Invalid radii: both must be positive and not equal.");
+        }
+        let center_lon = (lon1 + lon2) / 2;
+        let center_lat = (lat1 + lat2) / 2;
+        let l1 = r1 * 1000;
+        let l2 = r2 * 1000;
+
+        const tm_proj = `+proj=tmerc +lat_0=${center_lat} +lon_0=${center_lon} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
+        const proj = proj4('EPSG:4326', tm_proj);
+        const [x1, y1] = proj.forward([lon1, lat1]);
+        const [x2, y2] = proj.forward([lon2, lat2]);
+
+        const xf = (x1 * l2 - x2 * l1) / (l2 - l1);
+        const yf = (y1 * l2 - y2 * l1) / (l2 - l1);
+
+        const A = (x2 - xf) ** 2 - l2 ** 2;
+        const B = -2 * (x2 - xf) * (y2 - yf);
+        const C = (y2 - yf) ** 2 - l2 ** 2;
+        const d = B ** 2 - 4 * A * C;
+        const mP = (-B + Math.sqrt(d)) / (2 * A);
+        const mQ = (-B - Math.sqrt(d)) / (2 * A);
+
+        const S1 = 1 + mP ** 2;
+        const S2 = 1 + mQ ** 2;
+        const T1 = -2 * x1 + 2 * mP * (yf - mP * xf - y1);
+        const T2 = -2 * x2 + 2 * mP * (yf - mP * xf - y2);
+        const T3 = -2 * x1 + 2 * mQ * (yf - mQ * xf - y1);
+        const T4 = -2 * x2 + 2 * mQ * (yf - mQ * xf - y2);
+
+        const xP1 = -T1 / (2 * S1);
+        const yP1 = mP * xP1 + (yf - mP * xf);
+        const xP2 = -T2 / (2 * S1);
+        const yP2 = mP * xP2 + (yf - mP * xf);
+        const xQ1 = -T3 / (2 * S2);
+        const yQ1 = mQ * xQ1 + (yf - mQ * xf);
+        const xQ2 = -T4 / (2 * S2);
+        const yQ2 = mQ * xQ2 + (yf - mQ * xf);
+
+        const coordinates = [
+          [xP1, yP1],
+          [xP2, yP2],
+          [xQ1, yQ1],
+          [xQ2, yQ2]
+        ];
+        const results = coordinates.map(coord => proj.inverse([coord[0], coord[1]]));
+        console.log("Coordinates in WGS84:", results);
+        return results.map(coord => [coord[0], coord[1]]);
+      }
+
+      function generator(sets) {
+        if (sets.length < 2) {
+          throw new Error("At least two sets of coordinates are required.");
+        }
+        const logger = [];
+        for (let i = 0; i < sets.length - 1; i++) {
+          logger.push(
+            pinner(
+              sets[i][0],
+              sets[i][1],
+              sets[i][2],
+              sets[i + 1][0],
+              sets[i + 1][1],
+              sets[i + 1][2]
+            )
+          );
+        }
+
+        const averaged_P = [];
+        const averaged_Q = [];
+        averaged_P.push([logger[0][0][0], logger[0][0][1]]);
+        averaged_Q.push([logger[0][2][0], logger[0][2][1]]);
+        for (let i = 0; i < logger.length - 1; i++) {
+          averaged_P.push([
+            (logger[i][1][0] + logger[i + 1][0][0]) / 2,
+            (logger[i][1][1] + logger[i + 1][0][1]) / 2
+          ]);
+          averaged_Q.push([
+            (logger[i][3][0] + logger[i + 1][2][0]) / 2,
+            (logger[i][3][1] + logger[i + 1][2][1]) / 2
+          ]);
+        }
+        averaged_P.push([
+          logger[logger.length - 1][1][0],
+          logger[logger.length - 1][1][1]
+        ]);
+        averaged_Q.push([
+          logger[logger.length - 1][3][0],
+          logger[logger.length - 1][3][1]
+        ]);
+
+        const segment_path = [averaged_P, averaged_Q];
+
+        console.log(segment_path)
+
+        paper.setup(document.getElementById('Canvas_1'));
+
+        function pathmaker(polyline) {
+          const path = new paper.Path();
+
+          path.strokeColor = 'black';
+          path.strokeWidth = 3;
+
+          polyline.forEach(p => {
+              path.add(new paper.Point(p[0], p[1]));
+            }
+          )
+
+          path.smooth({type: 'continuous'});
+          return path;
+        }
+        const smooth_paths = [pathmaker(averaged_P), pathmaker(averaged_Q)];
+      }
+
+      console.log("Testing ground loaded. Use `pinner()` or `generator()` in console.");
+    </script>
+  </body>
+</html>
+
+`generator([[108.8, 19.0, 100], [110.4, 22.1, 170], [115.7, 26.1, 270], [120.6, 28.8, 400]])`
